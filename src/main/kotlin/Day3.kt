@@ -6,6 +6,37 @@ import strikt.assertions.isEqualTo
 import java.io.File
 
 enum class CommandType { MUL, DO, DONT }
+
+interface CommandHandler {
+    fun handle(operation: Operation, sum: Int): Int
+}
+
+class Part1CommandHandler : CommandHandler {
+    override fun handle(operation: Operation, sum: Int): Int {
+        return when (operation.command) {
+            CommandType.DO -> { sum }
+            CommandType.DONT -> { sum }
+            CommandType.MUL -> handleMul(operation, sum)
+        }
+    }
+}
+
+class Part2CommandHandler : CommandHandler {
+    private var multiplicationEnabled = true
+
+    override fun handle(operation: Operation, sum: Int): Int {
+        return when (operation.command) {
+            CommandType.DO -> { multiplicationEnabled = true; sum }
+            CommandType.DONT -> { multiplicationEnabled = false; sum }
+            CommandType.MUL -> if (multiplicationEnabled) handleMul(operation, sum) else sum
+        }
+    }
+}
+
+private fun handleMul(operation: Operation, sum: Int): Int {
+    return sum + (operation.left!! * operation.right!!)
+}
+
 data class Operation(val command: CommandType, val left: Int?, val right: Int?)
 
 val pattern = Regex("""(don't|mul|do)(?:\((\d{1,3}),(\d{1,3})\))?""")
@@ -18,6 +49,9 @@ fun extractOperations(input: String): List<Operation> =
             left.takeIf { it.isNotBlank() }?.toInt(),
             right.takeIf { it.isNotBlank() }?.toInt()
         )
+    }.filter {
+        it.command in setOf(CommandType.DO, CommandType.DONT) ||
+        (it.command == CommandType.MUL && it.left != null && it.right != null)
     }.toList()
 
 private fun String.toCommandType(): CommandType {
@@ -29,37 +63,21 @@ private fun String.toCommandType(): CommandType {
     }
 }
 
-fun day3part1(input: String): Int {
-    val operations = extractOperations(input).filter {
-        it.command == CommandType.MUL && it.left != null && it.right != null
-    }
+private fun processOperationsWithHandler(input: String, handler: CommandHandler): Int {
+    val operations = extractOperations(input)
+    return processOperations(operations, handler)
+}
 
-    return processOperations(operations) { operation, sum -> handleMul(operation, sum) }
+private fun processOperations(operations: List<Operation>, handler: CommandHandler): Int {
+    return operations.fold(0) { sum, operation -> handler.handle(operation, sum) }
+}
+
+fun day3part1(input: String): Int {
+    return processOperationsWithHandler(input, Part1CommandHandler())
 }
 
 fun day3part2(input: String): Int {
-    var multiplicationEnabled = true
-
-    val operations = extractOperations(input).filter {
-        it.command in setOf(CommandType.DO, CommandType.DONT) ||
-        (it.command == CommandType.MUL && it.left != null && it.right != null)
-    }
-
-    return processOperations(operations) { operation, sum ->
-        when (operation.command) {
-            CommandType.DO -> { multiplicationEnabled = true; sum }
-            CommandType.DONT -> { multiplicationEnabled = false; sum }
-            CommandType.MUL -> if (multiplicationEnabled) handleMul(operation, sum) else sum
-        }
-    }
-}
-
-private fun handleMul(operation: Operation, sum: Int): Int {
-    return sum + (operation.left!! * operation.right!!)
-}
-
-private fun processOperations(operations: List<Operation>, handler: (Operation, Int) -> Int): Int {
-    return operations.fold(0) { sum, operation -> handler(operation, sum) }
+    return processOperationsWithHandler(input, Part2CommandHandler())
 }
 
 class Day3Test {
