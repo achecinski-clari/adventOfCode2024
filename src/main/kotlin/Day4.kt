@@ -22,15 +22,10 @@ enum class Directions(val rowDirection: Int, val columnDirection: Int) {
     UP_RIGHT(-1, 1),
     DOWN_LEFT(1, -1),
     DOWN_RIGHT(1, 1),
-    NOT_SPECIFIED(0, 0), ;
+    NOT_SPECIFIED(0, 0);
 
-    operator fun component1(): Int {
-        return rowDirection
-    }
-
-    operator fun component2(): Int {
-        return columnDirection
-    }
+    operator fun component1(): Int = rowDirection
+    operator fun component2(): Int = columnDirection
 }
 
 private const val WORD_TO_FIND = "XMAS"
@@ -43,16 +38,21 @@ data class Occurrence(
     val charsFound: Int = INITIAL_CHARS_FOUND,
     val wordToFind: String = WORD_TO_FIND,
 ) {
-    fun isWordFound() = charsFound == wordToFind.length
+    fun isWordFound(): Boolean = charsFound == wordToFind.length
 }
 
+private sealed class FoundResult {
+    data class Found(val occurrence: Occurrence) : FoundResult()
+    data class Next(val occurrence: Occurrence) : FoundResult()
+    object NotFound : FoundResult()
+}
 
 suspend fun day4part1(input: List<String>): Int = coroutineScope {
     val initialOccurrences = findXOccurrences(input)
     val directions = Directions.entries.filter { it != Directions.NOT_SPECIFIED }
 
     val occurrencesWithDirections = initialOccurrences.flatMap { occurrence ->
-        directions.map { direction -> occurrence.copy(direction = direction) }
+        directions.map { occurrence.copy(direction = it) }
     }
 
     val foundWords = mutableSetOf<Occurrence>()
@@ -63,15 +63,13 @@ suspend fun day4part1(input: List<String>): Int = coroutineScope {
         queue.clear()
 
         val nextResults = currentBatch.map { occurrence ->
-            async {
-                processOccurrence(input, occurrence)
-            }
+            async { processOccurrence(input, occurrence) }
         }.awaitAll()
 
         nextResults.forEach { result ->
             when (result) {
-                is FoundResult.Found -> foundWords.add(result.occurrence)
-                is FoundResult.Next -> queue.addLast(result.occurrence)
+                is FoundResult.Found -> foundWords += result.occurrence
+                is FoundResult.Next -> queue += result.occurrence
                 FoundResult.NotFound -> Unit
             }
         }
@@ -81,38 +79,32 @@ suspend fun day4part1(input: List<String>): Int = coroutineScope {
 }
 
 private fun processOccurrence(input: List<String>, occurrence: Occurrence): FoundResult {
-    return if (occurrence.isWordFound()) {
-        FoundResult.Found(occurrence)
-    } else {
-        val (rowDir, colDir) = occurrence.direction
-        val nextRow = occurrence.row.row + rowDir
-        val nextColumn = occurrence.column.column + colDir
-        val charsFound = occurrence.charsFound
-        val nextExpectedChar = occurrence.wordToFind[charsFound]
+    return when {
+        occurrence.isWordFound() -> FoundResult.Found(occurrence)
+        else -> {
+            val (rowDir, colDir) = occurrence.direction
+            val nextRow = occurrence.row.row + rowDir
+            val nextColumn = occurrence.column.column + colDir
 
-        if (nextRow in input.indices && nextColumn in input[nextRow].indices) {
-            val nextChar = input[nextRow][nextColumn]
-            if (nextChar == nextExpectedChar) {
-                FoundResult.Next(
-                    occurrence.copy(
-                        row = Row(nextRow),
-                        column = Column(nextColumn),
-                        charsFound = charsFound + 1
-                    )
-                )
-            } else {
+            if (nextRow !in input.indices || nextColumn !in input[nextRow].indices) {
                 FoundResult.NotFound
+            } else {
+                val nextChar = input[nextRow][nextColumn]
+                val nextExpectedChar = occurrence.wordToFind[occurrence.charsFound]
+                if (nextChar == nextExpectedChar) {
+                    FoundResult.Next(
+                        occurrence.copy(
+                            row = Row(nextRow),
+                            column = Column(nextColumn),
+                            charsFound = occurrence.charsFound + 1
+                        )
+                    )
+                } else {
+                    FoundResult.NotFound
+                }
             }
-        } else {
-            FoundResult.NotFound
         }
     }
-}
-
-private sealed class FoundResult {
-    data class Found(val occurrence: Occurrence) : FoundResult()
-    data class Next(val occurrence: Occurrence) : FoundResult()
-    data object NotFound : FoundResult()
 }
 
 fun findXOccurrences(input: List<String>): Set<Occurrence> {
@@ -122,6 +114,7 @@ fun findXOccurrences(input: List<String>): Set<Occurrence> {
         }
     }.toSet()
 }
+
 
 class Day4Test {
     private val inputFile = File(javaClass.classLoader.getResource("day4input").file)
