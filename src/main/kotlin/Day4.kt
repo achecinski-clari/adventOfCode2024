@@ -1,5 +1,8 @@
 package checinski.adam
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import strikt.api.expectThat
@@ -19,7 +22,11 @@ class PatterMatching2D(
 
     private val patternsHashes = patterns.map { it.map { line -> computePatternHash(line) } }
 
-    fun findMatches() = patterns.indices.sumOf { findMatchesForPattern(it) }
+    suspend fun findMatches() = supervisorScope {
+        patterns.indices.map {
+            async { findMatchesForPattern(it) }
+        }.awaitAll().sum()
+    }
 
     private fun findMatchesForPattern(patternIndex: Int): Int {
         val pattern = patterns[patternIndex]
@@ -103,7 +110,7 @@ class PatterMatching2D(
     )
 }
 
-private fun day4part2(text: List<String>): Int {
+private suspend fun day4part2(text: List<String>): Int {
     return PatterMatching2D(
         listOf(
             listOf(
@@ -132,7 +139,7 @@ private fun day4part2(text: List<String>): Int {
 }
 
 
-private fun day4part1(text: List<String>): Int {
+private suspend fun day4part1(text: List<String>): Int {
     return PatterMatching2D(
         listOf(
             listOf("XMAS"),
