@@ -21,12 +21,12 @@ fun day5part1(input: List<String>): Int {
 
     var sum = 0
 
-    pagesToProduce.forEach {
+    pagesToProduce.forEach { page ->
         var pageRulesAreCorrect = true
-        for (i in it.indices) {
-            val beforeNumbers = it.take(i)
-            val afterNumbers = it.drop(i + 1)
-            val verifiedNumber = it[i]
+        for (i in page.indices) {
+            val beforeNumbers = page.take(i)
+            val afterNumbers = page.drop(i + 1)
+            val verifiedNumber = page[i]
 
             val beforeRulesForNumber = beforeRules.getOrDefault(verifiedNumber, emptyList())
             val afterRulesForNumber = afterRules.getOrDefault(verifiedNumber, emptyList())
@@ -37,7 +37,7 @@ fun day5part1(input: List<String>): Int {
             }
         }
         if (pageRulesAreCorrect) {
-            sum += it[it.size/2]
+            sum += page[page.size/2]
         }
     }
 
