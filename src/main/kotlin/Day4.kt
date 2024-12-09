@@ -1,130 +1,195 @@
 package checinski.adam
 
-import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import strikt.api.expectThat
 import strikt.assertions.isEqualTo
 import java.io.File
 
-@JvmInline
-value class Row(val row: Int)
-
-@JvmInline
-value class Column(val column: Int)
-
-enum class Directions(val rowDirection: Int, val columnDirection: Int) {
-    UP(-1, 0),
-    DOWN(1, 0),
-    LEFT(0, -1),
-    RIGHT(0, 1),
-    UP_LEFT(-1, -1),
-    UP_RIGHT(-1, 1),
-    DOWN_LEFT(1, -1),
-    DOWN_RIGHT(1, 1),
-    NOT_SPECIFIED(0, 0);
-
-    operator fun component1(): Int = rowDirection
-    operator fun component2(): Int = columnDirection
-}
-
-private const val WORD_TO_FIND = "XMAS"
-private const val INITIAL_CHARS_FOUND = 1
-
-data class Occurrence(
-    val row: Row,
-    val column: Column,
-    val direction: Directions = Directions.NOT_SPECIFIED,
-    val charsFound: Int = INITIAL_CHARS_FOUND,
-    val wordToFind: String = WORD_TO_FIND,
+class PatterMatching2D(
+    private val patterns: List<List<String>>,
+    private val text: List<String>,
+    private val wildCardCharacter: Char = '*'
 ) {
-    fun isWordFound(): Boolean = charsFound == wordToFind.length
-}
+    private val textRows = text.size
+    private val textCols = text[0].length
 
-private sealed class FoundResult {
-    data class Found(val occurrence: Occurrence) : FoundResult()
-    data class Next(val occurrence: Occurrence) : FoundResult()
-    object NotFound : FoundResult()
-}
+    private val mod = 1000000013599L
+    private val base = 131L
 
-suspend fun day4part1(input: List<String>): Int = coroutineScope {
-    val initialOccurrences = findXOccurrences(input)
-    val directions = Directions.entries.filter { it != Directions.NOT_SPECIFIED }
+    private val patternsHashes = patterns.map { it.map { line -> computePatternHash(line) } }
 
-    val occurrencesWithDirections = initialOccurrences.flatMap { occurrence ->
-        directions.map { occurrence.copy(direction = it) }
-    }
+    fun findMatches() = patterns.indices.sumOf { findMatchesForPattern(it) }
 
-    val foundWords = mutableSetOf<Occurrence>()
-    val queue = ArrayDeque(occurrencesWithDirections)
+    private fun findMatchesForPattern(patternIndex: Int): Int {
+        val pattern = patterns[patternIndex]
+        val patternHashes = patternsHashes[patternIndex]
+        val patternRows = pattern.size
+        val patternCols = pattern[0].length
 
-    while (queue.isNotEmpty()) {
-        val currentBatch = queue.toList()
-        queue.clear()
-
-        val nextResults = currentBatch.map { occurrence ->
-            async { processOccurrence(input, occurrence) }
-        }.awaitAll()
-
-        nextResults.forEach { result ->
-            when (result) {
-                is FoundResult.Found -> foundWords += result.occurrence
-                is FoundResult.Next -> queue += result.occurrence
-                FoundResult.NotFound -> Unit
-            }
-        }
-    }
-
-    foundWords.size
-}
-
-private fun processOccurrence(input: List<String>, occurrence: Occurrence): FoundResult {
-    return when {
-        occurrence.isWordFound() -> FoundResult.Found(occurrence)
-        else -> {
-            val (rowDir, colDir) = occurrence.direction
-            val nextRow = occurrence.row.row + rowDir
-            val nextColumn = occurrence.column.column + colDir
-
-            if (nextRow !in input.indices || nextColumn !in input[nextRow].indices) {
-                FoundResult.NotFound
-            } else {
-                val nextChar = input[nextRow][nextColumn]
-                val nextExpectedChar = occurrence.wordToFind[occurrence.charsFound]
-                if (nextChar == nextExpectedChar) {
-                    FoundResult.Next(
-                        occurrence.copy(
-                            row = Row(nextRow),
-                            column = Column(nextColumn),
-                            charsFound = occurrence.charsFound + 1
-                        )
-                    )
-                } else {
-                    FoundResult.NotFound
+        return (0..(textRows - patternRows)).sumOf { row ->
+            (0..(textCols - patternCols)).count { col ->
+                (0 until patternRows).all { i ->
+                    doesLineMatch(patternHashes[i], text[row + i], col)
                 }
             }
         }
     }
-}
 
-fun findXOccurrences(input: List<String>): Set<Occurrence> {
-    return input.flatMapIndexed { rowIndex, row ->
-        row.mapIndexedNotNull { colIndex, char ->
-            if (char == 'X') Occurrence(Row(rowIndex), Column(colIndex)) else null
+    private fun computeLineHashes(line: String): Pair<LongArray, LongArray> {
+        val length = line.length
+        val prefixHashes = LongArray(length + 1) { 0L }
+        val powerValues = LongArray(length + 1) { 1L }
+        for (i in line.indices) {
+            prefixHashes[i + 1] = (prefixHashes[i] * base + line[i].code.toLong()) % mod
+            powerValues[i + 1] = (powerValues[i] * base) % mod
         }
-    }.toSet()
+        return prefixHashes to powerValues
+    }
+
+    private fun computeHash(
+        prefixHashes: LongArray,
+        powerValues: LongArray,
+        start: Int,
+        end: Int
+    ): Long {
+        val len = end - start + 1
+        val hashVal = prefixHashes[end + 1] - (prefixHashes[start] * powerValues[len] % mod)
+        return (hashVal % mod + mod) % mod
+    }
+
+    private fun computePatternHash(patternLine: String): PatternHash {
+        val nonWildcardChars = StringBuilder()
+        val indices = mutableListOf<Int>()
+        for ((i, ch) in patternLine.withIndex()) {
+            if (ch != wildCardCharacter) {
+                nonWildcardChars.append(ch)
+                indices.add(i)
+            }
+        }
+
+        val (prefixHashes, powerValues) = computeLineHashes(nonWildcardChars.toString())
+        return PatternHash(prefixHashes, powerValues, indices, patternLine.length)
+    }
+
+    private fun doesLineMatch(
+        patternHash: PatternHash,
+        textLine: String,
+        startCol: Int
+    ): Boolean {
+        val endCol = startCol + patternHash.length - 1
+        if (endCol >= textLine.length) return false
+
+        val extractedChars = StringBuilder()
+        for (i in patternHash.nonWildcardIndices) {
+            val textPos = startCol + i
+            extractedChars.append(textLine[textPos])
+        }
+
+        if (extractedChars.isEmpty()) return true
+
+        val (tempPrefix, tempPower) = computeLineHashes(extractedChars.toString())
+        val extractedHash = computeHash(tempPrefix, tempPower, 0, extractedChars.length - 1)
+
+        val hash = computeHash(patternHash.prefixHashes, patternHash.powerValues, 0, extractedChars.length - 1)
+        return extractedHash == hash
+    }
+
+    private data class PatternHash(
+        val prefixHashes: LongArray,
+        val powerValues: LongArray,
+        val nonWildcardIndices: List<Int>,
+        val length: Int
+    )
 }
 
+private fun day4part2(text: List<String>): Int {
+    return PatterMatching2D(
+        listOf(
+            listOf(
+                "M*M",
+                "*A*",
+                "S*S",
+            ),
+            listOf(
+                "S*M",
+                "*A*",
+                "S*M",
+            ),
+            listOf(
+                "S*S",
+                "*A*",
+                "M*M",
+            ),
+            listOf(
+                "M*S",
+                "*A*",
+                "M*S",
+            ),
+        ),
+        text
+    ).findMatches()
+}
+
+
+private fun day4part1(text: List<String>): Int {
+    return PatterMatching2D(
+        listOf(
+            listOf("XMAS"),
+            listOf("SAMX"),
+            listOf("X***",
+                   "*M**",
+                   "**A*",
+                   "***S",
+            ),
+            listOf("S***",
+                   "*A**",
+                   "**M*",
+                   "***X",
+            ),
+            listOf("***S",
+                   "**A*",
+                   "*M**",
+                   "X***",
+            ),
+            listOf("***X",
+                   "**M*",
+                   "*A**",
+                   "S***",
+            ),
+            listOf("X",
+                   "M",
+                   "A",
+                   "S",
+            ),
+            listOf("S",
+                   "A",
+                   "M",
+                   "X",
+            ),
+        ),
+        text
+    ).findMatches()
+}
 
 class Day4Test {
     private val inputFile = File(javaClass.classLoader.getResource("day4input").file)
     private val part1Answer = 2639
+    private val part2Answer = 2005
     private val part1ExampleAnswer = 18
+
     @Test
     fun `part 1 answer check`() = runTest {
         val result = day4part1(inputFile.readLines())
 
         expectThat(result).isEqualTo(part1Answer)
+    }
+
+    @Test
+    fun `part 2 answer check`() = runTest {
+        val result = day4part2(inputFile.readLines())
+
+        expectThat(result).isEqualTo(part2Answer)
     }
 
     @Test
