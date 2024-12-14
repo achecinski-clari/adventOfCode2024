@@ -12,17 +12,21 @@ value class Frequency(val value: Char)
 value class AntiNodePosition(val value: Position)
 
 data class Position(val x: Int, val y: Int) {
-    fun findAntiNodesWith(position: Position): Pair<AntiNodePosition, AntiNodePosition> {
-        val (deltaX, deltaY) = findPositionsDelta(position)
+    fun findAntiNodesWith(other: Position): Pair<AntiNodePosition, AntiNodePosition> {
+        val (deltaX, deltaY) = deltaTo(other)
         val antiNode1 = AntiNodePosition(Position(x - deltaX, y - deltaY))
-        val antiNode2 = AntiNodePosition(Position(position.x + deltaX, position.y + deltaY))
-        return Pair(antiNode1, antiNode2)
+        val antiNode2 = AntiNodePosition(Position(other.x + deltaX, other.y + deltaY))
+        return antiNode1 to antiNode2
     }
-    fun findResonantHarmoniesAntiNodesWith(position: Position, indicesY: IntRange, indicesX: IntRange): Set<AntiNodePosition> {
-        val antiNodes = mutableSetOf(AntiNodePosition(this))
-        antiNodes += AntiNodePosition(position)
 
-        var (deltaX, deltaY) = findPositionsDelta(position)
+    fun findResonantHarmoniesAntiNodesWith(
+        other: Position,
+        indicesY: IntRange,
+        indicesX: IntRange
+    ): Set<AntiNodePosition> {
+        val antiNodes = mutableSetOf(AntiNodePosition(this), AntiNodePosition(other))
+        val (deltaX, deltaY) = deltaTo(other)
+
         var tempX = x
         var tempY = y
         while (tempX in indicesX && tempY in indicesY) {
@@ -30,6 +34,7 @@ data class Position(val x: Int, val y: Int) {
             tempX -= deltaX
             tempY -= deltaY
         }
+
         tempX = x
         tempY = y
         while (tempX in indicesX && tempY in indicesY) {
@@ -37,75 +42,60 @@ data class Position(val x: Int, val y: Int) {
             tempX += deltaX
             tempY += deltaY
         }
+
         return antiNodes
     }
 
-    private fun findPositionsDelta(position: Position): Pair<Int, Int> {
-        return Pair(position.x - x, position.y - y)
-    }
+    private fun deltaTo(other: Position): Pair<Int, Int> = (other.x - x) to (other.y - y)
 }
 
 fun day8part1(input: List<String>): Int {
-    val frequencyToPositions: Map<Frequency, List<Position>> = findPositionsOfAntennasWithSameFrequency(input)
-    val uniqueAntiNodes = mutableSetOf<AntiNodePosition>()
-
-    frequencyToPositions.forEach { (frequency, positions) ->
-        val pairs = mutableListOf<Pair<Position, Position>>()
-
-        for (i in positions.indices) {
-            for (j in i + 1 until positions.size) {
-                val position1 = positions[i]
-                val position2 = positions[j]
-                pairs.add(position1 to position2)
-            }
-        }
-
-        pairs.forEach { (position1, position2) ->
-            val (antiNode1, antiNode2) = position1.findAntiNodesWith(position2)
-            uniqueAntiNodes += antiNode1
-            uniqueAntiNodes += antiNode2
-        }
+    return solveDay8(input) { pos1, pos2, _, _ ->
+        val (antiNode1, antiNode2) = pos1.findAntiNodesWith(pos2)
+        setOf(antiNode1, antiNode2)
     }
-    return uniqueAntiNodes.filter { it.value.x in input[0].indices && it.value.y in input.indices }.size
 }
 
 fun day8part2(input: List<String>): Int {
-    val frequencyToPositions: Map<Frequency, List<Position>> = findPositionsOfAntennasWithSameFrequency(input)
-    val uniqueAntiNodes = mutableSetOf<AntiNodePosition>()
-
-    frequencyToPositions.forEach { (frequency, positions) ->
-        val pairs = mutableListOf<Pair<Position, Position>>()
-
-        for (i in positions.indices) {
-            for (j in i + 1 until positions.size) {
-                val position1 = positions[i]
-                val position2 = positions[j]
-                pairs.add(position1 to position2)
-            }
-        }
-
-        pairs.forEach { (position1, position2) ->
-            val antiNodes = position1.findResonantHarmoniesAntiNodesWith(position2, input.indices, input[0].indices)
-            uniqueAntiNodes += antiNodes
-        }
+    return solveDay8(input) { pos1, pos2, yRange, xRange ->
+        pos1.findResonantHarmoniesAntiNodesWith(pos2, yRange, xRange)
     }
-    return uniqueAntiNodes.filter { it.value.x in input[0].indices && it.value.y in input.indices }.size
+}
+
+fun solveDay8(
+    input: List<String>,
+    antiNodeCalculator: (Position, Position, IntRange, IntRange) -> Set<AntiNodePosition>
+): Int {
+    val frequencyToPositions = findPositionsOfAntennasWithSameFrequency(input)
+    val xRange = input[0].indices
+    val yRange = input.indices
+
+    val uniqueAntiNodes = frequencyToPositions.values
+        .asSequence()
+        .flatMap { it.allPairs() }
+        .flatMap { (pos1, pos2) ->
+            antiNodeCalculator(pos1, pos2, yRange, xRange)
+        }
+        .filter { it.value.x in xRange && it.value.y in yRange }
+        .toSet()
+
+    return uniqueAntiNodes.size
 }
 
 fun findPositionsOfAntennasWithSameFrequency(input: List<String>): Map<Frequency, List<Position>> {
-    val frequencyToPositions = mutableMapOf<Frequency, List<Position>>()
-    for (y in input.indices) {
-        for (x in input[y].indices) {
-            if (input[y][x] in '0'..'9' ||
-                input[y][x] in 'A'..'Z' ||
-                input[y][x] in 'a'..'z') {
-                val frequency = Frequency(input[y][x])
-                val position = Position(x, y)
-                frequencyToPositions[frequency] = frequencyToPositions.getOrDefault(frequency, emptyList()) + position
-            }
+    return input.flatMapIndexed { y, row ->
+        row.mapIndexedNotNull { x, ch ->
+            if (ch.isLetterOrDigit()) Frequency(ch) to Position(x, y) else null
+        }
+    }.groupBy({ it.first }, { it.second })
+}
+
+private fun List<Position>.allPairs(): Sequence<Pair<Position, Position>> = sequence {
+    for (i in indices) {
+        for (j in i + 1 until size) {
+            yield(get(i) to get(j))
         }
     }
-    return frequencyToPositions
 }
 
 class Day8Test {
