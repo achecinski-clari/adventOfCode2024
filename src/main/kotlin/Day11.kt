@@ -4,51 +4,67 @@ import strikt.api.expectThat
 import strikt.assertions.isEqualTo
 import java.io.File
 
-fun transformStone(stone: Stone): List<Stone> {
-    if (stone.value == 0L) {
-        return listOf(Stone(1))
+private val transformCache = mutableMapOf<Long, List<Long>>()
+
+fun transformStone(stone: Long): List<Long> {
+    if (stone == 0L) {
+        return listOf(1)
     } else if (countDigits(stone) % 2 == 0) {
-        val stringValue = stone.value.toString()
+        val stringValue = stone.toString()
         try {
             return listOf(
-                Stone(stringValue.take(stringValue.length / 2).toLong()),
-                Stone(stringValue.takeLast(stringValue.length / 2).toLong())
+                stringValue.take(stringValue.length / 2).toLong(),
+                stringValue.takeLast(stringValue.length / 2).toLong()
             )
         } catch (e: Exception) {
             println("Error :((")
             throw e
         }
     } else {
-        return listOf(Stone(stone.value * 2024))
+        return listOf(stone * 2024)
     }
 }
 
-fun countDigits(stone: Stone): Int {
-    return stone.value.toString().length
+fun countDigits(stone: Long): Int {
+    return stone.toString().length
 }
 
-data class Stone(val value: Long)
-
-fun day11part1(input: String): Int {
-    val stones = input.split(" ").map { Stone(it.toLong()) }
-    stones.forEach { println(it) }
-    val stonesAfterBlinks = blink(stones, ::transformStone, 25)
-    return stonesAfterBlinks.size
+fun day11part1(input: String): Long {
+    val stoneValueToCount = input.split(" ")
+        .map { it.toLong() }
+        .groupingBy { it }
+        .eachCount()
+        .mapValues { it.value.toLong() }.toMutableMap()
+    val stonesAfterBlinks = blink(stoneValueToCount, ::transformStone, 25)
+    return stonesAfterBlinks.values.sum()
 }
 
-fun day11part2(input: String): Int {
-    val stones = input.split(" ").map { Stone(it.toLong()) }
-    stones.forEach { println(it) }
-    val stonesAfterBlinks = blink(stones, ::transformStone, 75)
-    return stonesAfterBlinks.size
-}
+fun day11part2(input: String): Long {
+    val stoneValueToCount = input.split(" ")
+        .map { it.toLong() }
+        .groupingBy { it }
+        .eachCount()
+        .mapValues { it.value.toLong() }.toMutableMap()
+    val stonesAfterBlinks = blink(stoneValueToCount, ::transformStone, 75)
+    return stonesAfterBlinks.values.sum()}
 
-fun blink(stones: List<Stone>, transform: Stone.() -> List<Stone>, i: Int): List<Stone> {
+fun blink(stones: MutableMap<Long, Long>, transform: Long.() -> List<Long>, i: Int): MutableMap<Long, Long> {
     var tempStones = stones
     for (j in 0 until i) {
-        val newTempStones = mutableListOf<Stone>()
+        val newTempStones = mutableMapOf<Long, Long>()
         tempStones.forEach {
-            newTempStones.addAll(it.transform())
+            val cachedTransform = transformCache[it.key]
+            val transformed = if (cachedTransform != null) {
+                cachedTransform
+            } else {
+                val newTransform = it.key.transform()
+                transformCache[it.key] = newTransform
+                newTransform
+            }
+
+            transformed.forEach { stone ->
+                newTempStones[stone] = newTempStones.getOrDefault(stone, 0) + it.value
+            }
         }
         tempStones = newTempStones
     }
@@ -59,10 +75,10 @@ fun blink(stones: List<Stone>, transform: Stone.() -> List<Stone>, i: Int): List
 class DayXTest {
     private val inputFile = File(javaClass.classLoader.getResource("day11input").file)
     private val exampleInputFile = File(javaClass.classLoader.getResource("day11exampleinput").file)
-    private val part1ExampleAnswer = 55312
-    private val part2ExampleAnswer = 0
-    private val part1Answer = 194557
-    private val part2Answer = 0
+    private val part1ExampleAnswer = 55312L
+    private val part2ExampleAnswer = 0L
+    private val part1Answer = 194557L
+    private val part2Answer = 231532558973909L
 
     @Test
     fun `part 1 example answer check`() = runTest {
